@@ -46,11 +46,31 @@ class Provider(BaseProvider):
         self.bridge.navigate_and_wait(s, c.url, wait=8.0)
         if options:
             self._apply_options(s, options)
+
+        # Upload files if provided
+        if options and options.file_paths:
+            for fp in options.file_paths:
+                logger.info("Uploading %s", fp)
+                ur = self.bridge._run("browser", s, "upload", "input[type=file]", fp, timeout=30)
+                logger.debug("upload: %s", ur)
+                if not ur.get("uploaded"):
+                    raise RuntimeError(f"File upload failed: {ur}")
+                self.bridge.wait(2.0)
         fr = self.bridge.fill(s, "textarea", question)
         if not fr.get("filled"):
             if fr.get("error"): raise RuntimeError(f"DeepSeek fill error: {fr}")
             self.bridge.wait(3.0)
-            fr = self.bridge.fill(s, "textarea", question)
+    
+        # Upload files if provided
+        if options and options.file_paths:
+            for fp in options.file_paths:
+                logger.info("Uploading %s", fp)
+                ur = self.bridge._run("browser", s, "upload", "input[type=file]", fp, timeout=30)
+                logger.debug("upload: %s", ur)
+                if not ur.get("uploaded"):
+                    raise RuntimeError(f"File upload failed: {ur}")
+                self.bridge.wait(2.0)
+        fr = self.bridge.fill(s, "textarea", question)
             if not fr.get("filled"): raise RuntimeError(f"DeepSeek fill failed: {fr}")
         self.bridge.wait(1.0)
         self.bridge.keys(s, "Enter")
