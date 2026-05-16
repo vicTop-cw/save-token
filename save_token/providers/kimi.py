@@ -1,13 +1,12 @@
-"""腾讯元宝 provider — https://yuanbao.tencent.com/chat
+"""Kimi provider — https://kimi.moonshot.cn/
 
-Uses OpenCLI eval() to dispatch React input events and click send.
-Response extraction via DOM traversal.
+Uses OpenCLI eval() to interact with Kimi web chat.
+Response extraction via DOM selectors.
 
-NOTE: When yuanbao updates its UI, update PROVIDER_CONFIG selectors/JS below.
+NOTE: When Kimi updates its UI, update PROVIDER_CONFIG selectors/JS below.
 """
 
 import logging
-import json as _json
 import re
 
 from ..opencli_bridge import OpenCLIBridge
@@ -16,22 +15,22 @@ from .base import BaseProvider, ProviderConfig, AskResult
 logger = logging.getLogger(__name__)
 
 PROVIDER_CONFIG = ProviderConfig(
-    name="yuanbao",
-    url="https://yuanbao.tencent.com/chat",
-    description="腾讯元宝 (free)",
+    name="kimi",
+    url="https://kimi.moonshot.cn/",
+    description="Kimi (Moonshot AI, free)",
     input_selector="0",
     send_selector="1",
     send_method="eval",
     response_js="""
-// Extract conversation text from yuanbao chat page.
+// Extract response text from Kimi chat page.
 (function() {
   const selectors = [
-    '[class*="hyc-common-markdown"]',
     '[class*="markdown"]',
-    '[class*="message__content"]',
-    '[class*="chat__answer"]',
-    '[class*="agent-chat__answer"]',
-    '[class*="content"]',
+    '[class*="message-content"]',
+    '[class*="chat-content"]',
+    '[class*="reply"]',
+    '[class*="answer"]',
+    '[class*="kimi-message"]',
   ];
   let texts = [];
   for (const sel of selectors) {
@@ -48,15 +47,13 @@ PROVIDER_CONFIG = ProviderConfig(
 })()
 """,
     thinking_js="""
-// Extract thinking/reasoning process if yuanbao exposes it.
+// Extract thinking/reasoning process from Kimi.
 (function() {
   const selectors = [
     '[class*="thinking"]',
     '[class*="reasoning"]',
     '[class*="think"]',
-    '[class*="deepThink"]',
-    '[class*="deep-think"]',
-    '[class*="chain-of-thought"]',
+    '[class*="chain"]',
   ];
   for (const sel of selectors) {
     const el = document.querySelector(sel);
@@ -68,12 +65,12 @@ PROVIDER_CONFIG = ProviderConfig(
     needs_fill_not_type=True,
     post_send_wait=15,
     pre_clear=False,
-    session_name="save-token-yuanbao",
+    session_name="save-token-kimi",
 )
 
 
 class Provider(BaseProvider):
-    """腾讯元宝 via eval-based browser automation."""
+    """Kimi via eval-based browser automation."""
 
     def __init__(self, config: ProviderConfig = None):
         super().__init__(config or PROVIDER_CONFIG)
@@ -83,16 +80,17 @@ class Provider(BaseProvider):
         session = self.config.session_name
         cfg = self.config
 
-        # 1. Open yuanbao chat
+        # 1. Open Kimi chat
         logger.info("Opening %s", cfg.url)
         result = self.bridge.navigate_and_wait(session, cfg.url, wait=5.0)
 
-        # 2. Fill textarea using native value setter + dispatch (React-compatible)
+        # 2. Fill textarea using native value setter + dispatch
         fill_js = f"""(function() {{
   const ta = document.querySelector(
     'textarea[placeholder*="输入"], ' +
     'textarea[placeholder*="消息"], ' +
     'textarea[placeholder*="问题"], ' +
+    'textarea[placeholder*="发送"], ' +
     'textarea'
   );
   if (!ta) return 'E_NOTEXTAREA';
@@ -107,11 +105,11 @@ class Provider(BaseProvider):
         r = self.bridge.eval(session, fill_js)
         logger.debug("fill: %s", r)
         if "E_NOTEXTAREA" in r:
-            raise RuntimeError("Yuanbao page structure changed — update input_selector")
+            raise RuntimeError("Kimi page structure changed — update input_selector")
 
         self.bridge.wait(0.8)
 
-        # 3. Click send button via eval — try multiple strategies
+        # 3. Click send button
         click_js = """(function() {
   const ta = document.querySelector('textarea');
   if (ta) {
@@ -162,7 +160,7 @@ class Provider(BaseProvider):
             if len(parts) > 1:
                 answer = parts[1].strip()
         for noise in [
-            "腾讯元宝", "yuanbao", "开始对话", "发送",
+            "Kimi", "Moonshot", "开始对话", "发送",
             "内容由 AI 生成", "AI 生成", "仅供参考",
         ]:
             answer = answer.replace(noise, "")
@@ -171,7 +169,7 @@ class Provider(BaseProvider):
         answer = answer.strip()
 
         if not answer or len(answer) < 2:
-            answer = "(empty — selectors may need updating for current yuanbao DOM)"
+            answer = "(empty — selectors may need updating for current Kimi DOM)"
 
         return AskResult(
             question=question,

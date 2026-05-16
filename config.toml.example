@@ -11,6 +11,9 @@ deep_think = false
 [provider.yuanbao]
 url = "https://yuanbao.tencent.com/chat"
 
+[provider.doubao]
+url = "https://www.doubao.com/chat/"
+
 [provider.kimi]
 url = "https://kimi.moonshot.cn/"
 

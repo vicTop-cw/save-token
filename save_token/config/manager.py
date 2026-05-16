@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
         "deepseek": {"url": "https://chat.deepseek.com/", "deep_think": False},
         "yuanbao": {"url": "https://yuanbao.tencent.com/chat"},
         "kimi": {"url": "https://kimi.moonshot.cn/"},
+        "doubao": {"url": "https://www.doubao.com/chat/"},
     },
     "opencli": {},
     "behavior": {
