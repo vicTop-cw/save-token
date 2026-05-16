@@ -9,10 +9,10 @@ from .base import BaseProvider, ProviderConfig
 
 
 _provider_classes: Dict[str, Type[BaseProvider]] = {}
+_provider_configs: Dict[str, ProviderConfig] = {}
 
 
 def _discover() -> None:
-    """Auto-discover provider modules in this package."""
     if _provider_classes:
         return
 
@@ -27,12 +27,12 @@ def _discover() -> None:
                 cls = getattr(module, "Provider")
                 if isinstance(cfg, ProviderConfig) and issubclass(cls, BaseProvider):
                     _provider_classes[cfg.name] = cls
+                    _provider_configs[cfg.name] = cfg
         except ImportError as e:
-            pass  # Missing deps — skip this provider
+            pass
 
 
 def get_provider(name: str) -> BaseProvider:
-    """Get a provider instance by name."""
     _discover()
 
     if name not in _provider_classes:
@@ -43,13 +43,24 @@ def get_provider(name: str) -> BaseProvider:
             f"Available: {list(_provider_classes.keys())}"
         )
 
+    # Start with the provider's built-in defaults from PROVIDER_CONFIG
+    default_cfg = _provider_configs.get(name)
+
+    # Overlay user config (only url, deep_think, etc.)
     from save_token.config.manager import get_provider_config as gpc
-    pcfg = gpc(name)
-    cfg = ProviderConfig(**{k: v for k, v in pcfg.items() if k in ProviderConfig.__dataclass_fields__})
-    return _provider_classes[name](cfg)
+    user_cfg = gpc(name)
+
+    # Build final config: defaults + user overrides for known fields
+    field_names = set(ProviderConfig.__dataclass_fields__.keys())
+    merged = {k: getattr(default_cfg, k) for k in field_names if hasattr(default_cfg, k)}
+    for k, v in user_cfg.items():
+        if k in field_names and v is not None:
+            merged[k] = v
+
+    final_cfg = ProviderConfig(**merged)
+    return _provider_classes[name](final_cfg)
 
 
 def list_available() -> list:
-    """List all implemented (importable) provider names."""
     _discover()
     return sorted(_provider_classes.keys())
