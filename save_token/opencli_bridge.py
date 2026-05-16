@@ -28,15 +28,23 @@ class OpenCLIBridge:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             stdout = result.stdout.strip()
+            stderr = result.stderr.strip()
+            if stderr and "Press" not in stderr:
+                logger.debug("opencli stderr: %s", stderr[:200])
             if stdout:
-                return json.loads(stdout)
+                try:
+                    return json.loads(stdout)
+                except json.JSONDecodeError:
+                    # Keys command returns plain text like "Pressed: Enter"
+                    logger.debug("opencli non-JSON: %s", stdout[:200])
+                    return {"ok": True, "raw": stdout, "note": "non-json response"}
+            # stdout empty — could be success or failure
+            if result.returncode != 0:
+                return {"error": stderr or "unknown", "code": result.returncode}
             return {"ok": True, "raw": ""}
         except subprocess.TimeoutExpired:
             logger.error("opencli timeout: %s", " ".join(cmd))
             return {"error": "timeout", "cmd": " ".join(cmd)}
-        except json.JSONDecodeError:
-            logger.error("opencli bad JSON: %s", result.stdout[:200])
-            return {"error": "bad_json", "raw": result.stdout[:200]}
         except FileNotFoundError:
             raise RuntimeError(
                 f"opencli not found at {self.binary}. Install: npm install -g opencli"

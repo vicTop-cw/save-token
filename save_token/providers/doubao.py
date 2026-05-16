@@ -1,179 +1,66 @@
-"""豆包 provider — https://www.doubao.com/chat/
+"""豆包 provider — https://www.doubao.com/chat/ — CDP fill + keys."""
 
-Uses OpenCLI eval() to interact with Doubao web chat.
-Response extraction via DOM selectors.
-
-NOTE: When Doubao updates its UI, update PROVIDER_CONFIG selectors/JS below.
-"""
-
-import logging
-import re
-
+import logging, re
 from ..opencli_bridge import OpenCLIBridge
 from .base import BaseProvider, ProviderConfig, AskResult
 
 logger = logging.getLogger(__name__)
 
 PROVIDER_CONFIG = ProviderConfig(
-    name="doubao",
-    url="https://www.doubao.com/chat/",
+    name="doubao", url="https://www.doubao.com/chat/",
     description="豆包 (ByteDance, free)",
-    input_selector="0",
-    send_selector="1",
-    send_method="eval",
-    response_js="""
-// Extract response text from Doubao chat page.
+    input_selector="textarea", send_selector="Enter", send_method="keys",
+    response_js=r"""
 (function() {
-  const selectors = [
-    '[class*="markdown"]',
-    '[class*="message-content"]',
-    '[class*="chat-content"]',
-    '[class*="reply"]',
-    '[class*="answer"]',
-    '[class*="doubao-message"]',
-    '[class*="bot-message"]',
-  ];
+  const selectors = ['[class*="markdown"]', '[class*="message-content"]',
+    '[class*="chat-content"]', '[class*="reply"]', '[class*="answer"]',
+    '[class*="doubao-message"]', '[class*="bot-message"]'];
   let texts = [];
   for (const sel of selectors) {
-    const els = document.querySelectorAll(sel);
-    els.forEach(el => {
+    document.querySelectorAll(sel).forEach(el => {
       const t = el.textContent.trim();
       if (t && t.length > 2 && !texts.includes(t)) texts.push(t);
     });
   }
-  if (texts.length > 0) return texts.join('\\n---\\n');
-  const body = document.body.innerText || document.body.textContent;
-  const lines = body.split('\\n').filter(l => l.trim().length > 2);
-  return lines.slice(-60).join('\\n');
-})()
-""",
-    thinking_js="""
-// Extract thinking/reasoning process from Doubao.
-(function() {
-  const selectors = [
-    '[class*="thinking"]',
-    '[class*="reasoning"]',
-    '[class*="think"]',
-    '[class*="deep"]',
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el && el.textContent.trim().length > 1) return el.textContent.trim();
-  }
-  return '';
-})()
-""",
-    needs_fill_not_type=True,
-    post_send_wait=15,
-    pre_clear=False,
-    session_name="save-token-doubao",
+  if (texts.length > 0) return texts.join('\n---\n');
+  const body = document.body.innerText || document.body.textContent || '';
+  return body.substring(Math.max(0, body.length - 3000));
+})()""",
+    thinking_js="""(function() {
+  const els = document.querySelectorAll('[class*="thinking"], [class*="reasoning"], [class*="think"], [class*="deep"]');
+  for (const el of els) { const t = el.textContent.trim(); if (t && t.length > 2) return t; }
+  return ''; })()""",
+    needs_fill_not_type=True, post_send_wait=20, pre_clear=False,
+    session_name="save-token-db",
 )
 
-
 class Provider(BaseProvider):
-    """豆包 via eval-based browser automation."""
-
-    def __init__(self, config: ProviderConfig = None):
+    def __init__(self, config=None):
         super().__init__(config or PROVIDER_CONFIG)
         self.bridge = OpenCLIBridge()
 
-    def ask(self, question: str) -> AskResult:
-        session = self.config.session_name
-        cfg = self.config
-
-        # 1. Open Doubao chat
-        logger.info("Opening %s", cfg.url)
-        result = self.bridge.navigate_and_wait(session, cfg.url, wait=5.0)
-
-        # 2. Fill textarea using native value setter + dispatch
-        fill_js = f"""(function() {{
-  const ta = document.querySelector(
-    'textarea[placeholder*="输入"], ' +
-    'textarea[placeholder*="消息"], ' +
-    'textarea[placeholder*="问题"], ' +
-    'textarea[placeholder*="发送"], ' +
-    'textarea'
-  );
-  if (!ta) return 'E_NOTEXTAREA';
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype, 'value'
-  ).set;
-  setter.call(ta, {question!r});
-  ta.dispatchEvent(new Event('input', {{ bubbles: true }}));
-  return 'OK';
-}})()
-"""
-        r = self.bridge.eval(session, fill_js)
-        logger.debug("fill: %s", r)
-        if "E_NOTEXTAREA" in r:
-            raise RuntimeError("Doubao page structure changed — update input_selector")
-
-        self.bridge.wait(0.8)
-
-        # 3. Click send button
-        click_js = """(function() {
-  const ta = document.querySelector('textarea');
-  if (ta) {
-    const container = ta.closest('form') || ta.closest('div[class]');
-    if (container) {
-      const btns = container.querySelectorAll('button, [role="button"]');
-      for (const btn of btns) {
-        if (btn.tagName === 'BUTTON' || btn.getAttribute('role') === 'button') {
-          btn.click();
-          return 'clicked';
-        }
-      }
-      if (btns.length > 0) {
-        btns[btns.length - 1].click();
-        return 'clicked_last';
-      }
-    }
-  }
-  if (ta) {
-    ta.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true
-    }));
-    return 'enter';
-  }
-  return 'E_NOSEND';
-})()
-"""
-        self.bridge.eval(session, click_js)
-
-        # 4. Wait for response
-        self.bridge.wait(cfg.post_send_wait)
-
-        # 5. Extract thinking
+    def ask(self, question):
+        s, c = self.config.session_name, self.config
+        logger.info("Opening %s", c.url)
+        self.bridge.navigate_and_wait(s, c.url, wait=8.0)
+        fr = self.bridge.fill(s, "textarea", question)
+        if not fr.get("filled"):
+            if fr.get("error"): raise RuntimeError(f"Doubao fill error: {fr}")
+            self.bridge.wait(3.0)
+            fr = self.bridge.fill(s, "textarea", question)
+            if not fr.get("filled"): raise RuntimeError(f"Doubao fill failed: {fr}")
+        self.bridge.wait(1.0)
+        self.bridge.eval(s, "document.querySelector('textarea')?.focus()")
+        self.bridge.wait(0.3)
+        self.bridge.keys(s, "Enter")
+        self.bridge.wait(c.post_send_wait)
         thinking = ""
-        try:
-            thinking = self.bridge.eval(session, cfg.thinking_js) if cfg.thinking_js else ""
-        except Exception:
-            pass
-
-        # 6. Extract response
-        raw = self.bridge.eval(session, cfg.response_js)
-        logger.debug("response: %s", (raw or "")[:300])
-
-        # 7. Clean up answer
-        answer = raw or ""
-        if question and question in answer:
-            parts = answer.split(question, 1)
-            if len(parts) > 1:
-                answer = parts[1].strip()
-        for noise in [
-            "豆包", "Doubao", "开始对话", "发送",
-            "内容由 AI 生成", "AI 生成", "仅供参考",
-        ]:
-            answer = answer.replace(noise, "")
-        answer = re.sub(r'\n{3,}', '\n\n', answer)
-        answer = re.sub(r'---\n?', '', answer)
-        answer = answer.strip()
-
-        if not answer or len(answer) < 2:
-            answer = "(empty — selectors may need updating for current Doubao DOM)"
-
-        return AskResult(
-            question=question,
-            answer=answer,
-            thinking=thinking,
-        )
+        try: thinking = self.bridge.eval(s, c.thinking_js) if c.thinking_js else ""
+        except: pass
+        raw = self.bridge.eval(s, c.response_js)
+        ans = raw or ""
+        if question and question in ans: ans = ans.split(question, 1)[-1].strip()
+        for n in ["豆包", "Doubao", "内容由 AI 生成", "AI 生成", "仅供参考"]: ans = ans.replace(n, "")
+        ans = re.sub(r'\n{3,}', '\n\n', ans).strip()
+        if not ans or len(ans) < 2: ans = "(empty — selectors may need updating)"
+        return AskResult(question=question, answer=ans, thinking=thinking)
