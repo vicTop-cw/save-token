@@ -10,7 +10,7 @@ from .providers.registry import get_provider, list_available
 logger = logging.getLogger(__name__)
 
 
-def ask(question: str, provider: Optional[str] = None,
+def ask(question: str, provider: Optional[str] = None, ask_options=None,
         max_retries: int = 2, timeout: int = 120) -> AskResult:
     """Send a question to the specified (or default) AI provider.
 
@@ -29,7 +29,7 @@ def ask(question: str, provider: Optional[str] = None,
     for attempt in range(1, max_retries + 2):
         try:
             start = time.monotonic()
-            result = prov.ask(question)
+            result = prov.ask(question, options=ask_options)
             result.elapsed_ms = int((time.monotonic() - start) * 1000)
             result.provider = prov.config.name
             result.url = prov.config.url

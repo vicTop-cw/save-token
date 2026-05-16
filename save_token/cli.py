@@ -5,6 +5,7 @@ import json
 import click
 
 from .core import ask, list_providers
+from .options import AskOptions
 from .config.manager import load_config, save_config, get_provider_config
 
 
@@ -35,16 +36,19 @@ def main():
               help="Max retries on failure")
 @click.option("-t", "--thinking", is_flag=True,
               help="Show thinking process")
+@click.option("--deep-think",is_flag=True,help="Enable deep thinking")
+@click.option("--web-search",is_flag=True,help="Enable web search")
 @click.option("-j", "--json-output", is_flag=True,
               help="Output as JSON")
 def ask_cmd(question: str, provider: str, retries: int,
-            thinking: bool, json_output: bool):
+            thinking: bool, json_output: bool, deep_think: bool, web_search: bool):
     """Ask a question to a free AI chat provider.
 
     Uses browser cookies — no API key needed for most providers.
     """
     try:
-        result = ask(question, provider=provider, max_retries=retries)
+        opts = AskOptions(deep_think=deep_think, web_search=web_search)
+        result = ask(question, provider=provider, max_retries=retries, ask_options=opts)
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

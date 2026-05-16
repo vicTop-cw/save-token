@@ -32,8 +32,11 @@ def _discover() -> None:
             pass
 
 
-def get_provider(name: str) -> BaseProvider:
+def get_provider(name: str = None) -> BaseProvider:
     _discover()
+    if name is None:
+        from save_token.config.manager import get_provider_config as gpc
+        name = gpc(None).get("name", "deepseek")
 
     if name not in _provider_classes:
         from save_token.config.manager import get_provider_config as gpc

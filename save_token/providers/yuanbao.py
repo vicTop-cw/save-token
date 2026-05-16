@@ -28,7 +28,7 @@ class Provider(BaseProvider):
         super().__init__(config or PROVIDER_CONFIG)
         self.bridge = OpenCLIBridge()
 
-    def ask(self, question):
+    def ask(self, question, options=None):
         s, c = self.config.session_name, self.config
         logger.info("Opening %s", c.url)
         self.bridge.navigate_and_wait(s, c.url, wait=8.0)
