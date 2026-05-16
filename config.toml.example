@@ -1,0 +1,23 @@
+# Save-Token Configuration
+# Providers use existing browser cookies — no API keys needed for most.
+
+[provider.default]
+name = "deepseek"
+
+[provider.deepseek]
+url = "https://chat.deepseek.com/"
+deep_think = false
+
+[provider.yuanbao]
+url = "https://yuanbao.tencent.com/chat"
+
+[provider.kimi]
+url = "https://kimi.moonshot.cn/"
+
+[opencli]
+# binary = "/usr/local/bin/opencli"
+
+[behavior]
+response_timeout = 120
+max_retries = 2
+save_history = true
