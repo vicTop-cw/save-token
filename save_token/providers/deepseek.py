@@ -1,4 +1,4 @@
-"""DeepSeek Chat provider — unique session per ask, deep think & web search support."""
+"""DeepSeek Chat provider — unique session, deep think, thinking extraction."""
 
 import logging, re, time
 from ..opencli_bridge import OpenCLIBridge
@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 PROVIDER_CONFIG = ProviderConfig(
     name="deepseek", url="https://chat.deepseek.com/",
-    description="DeepSeek Chat — supports deep_think & web_search toggles",
+    description="DeepSeek Chat — deep_think & web_search toggles",
     input_selector="textarea", send_selector="Enter", send_method="keys",
     response_js=r"""
 (function() {
@@ -44,26 +44,21 @@ class Provider(BaseProvider):
         c = self.config
         logger.info("Opening %s (session %s)", c.url, s)
         self.bridge.navigate_and_wait(s, c.url, wait=8.0)
-
         if options:
             self._apply_options(s, options)
-
         fr = self.bridge.fill(s, "textarea", question)
         if not fr.get("filled"):
             if fr.get("error"): raise RuntimeError(f"DeepSeek fill error: {fr}")
             self.bridge.wait(3.0)
             fr = self.bridge.fill(s, "textarea", question)
             if not fr.get("filled"): raise RuntimeError(f"DeepSeek fill failed: {fr}")
-
         self.bridge.wait(1.0)
         self.bridge.keys(s, "Enter")
         self.bridge.wait(c.post_send_wait)
-
         thinking = ""
         try:
             thinking = self.bridge.eval(s, c.thinking_js) if c.thinking_js else ""
         except: pass
-
         raw = self.bridge.eval(s, c.response_js)
         answer = self._extract_answer(raw, question)
         return AskResult(question=question, answer=answer, thinking=thinking)
@@ -84,10 +79,6 @@ class Provider(BaseProvider):
 
     def _extract_answer(self, raw, question):
         if not raw: return "(empty)"
-        think_start = raw.rfind('已思考')
-        think_end = raw.rfind('深度思考\n')
-        if think_start >= 0 and think_end > think_start:
-            raw = raw[:think_start] + raw[think_end:]
         victor_pos = raw.rfind("Victor")
         chat_area = raw[victor_pos:] if victor_pos >= 0 else raw
         q_pos = chat_area.rfind(question)
@@ -95,6 +86,16 @@ class Provider(BaseProvider):
         if q_pos >= 0:
             after = chat_area[q_pos + len(question):].strip()
             if after.startswith(question): after = after[len(question):].strip()
+            # Deep think mode: answer is last line before toolbar in thinking block
+            dt_idx = after.rfind('已思考')
+            if dt_idx >= 0:
+                toolbar_idx = after.rfind('\n深度思考\n')
+                if toolbar_idx > dt_idx:
+                    mid = after[dt_idx:toolbar_idx]
+                    lines = mid.strip().split('\n')
+                    ans = lines[-1].strip() if lines else ""
+                    if ans and len(ans) > 2: return ans
+            # Standard extraction
             lines = after.split('\n'); result = []
             for line in lines:
                 line = line.strip()
