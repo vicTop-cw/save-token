@@ -43,11 +43,11 @@ class Provider(BaseProvider):
         s, c = self.config.session_name, self.config
         logger.info("Opening %s", c.url)
         self.bridge.navigate_and_wait(s, c.url, wait=8.0)
-        fr = self.bridge.fill(s, "textarea", question)
+        fr = self.bridge.fill(s, "textarea[placeholder*=\x22发消息\x22]", question)
         if not fr.get("filled"):
             if fr.get("error"): raise RuntimeError(f"Doubao fill error: {fr}")
             self.bridge.wait(3.0)
-            fr = self.bridge.fill(s, "textarea", question)
+            fr = self.bridge.fill(s, "textarea[placeholder*=\x22发消息\x22]", question)
             if not fr.get("filled"): raise RuntimeError(f"Doubao fill failed: {fr}")
         self.bridge.wait(1.0)
         self.bridge.eval(s, "document.querySelector('textarea')?.focus()")
