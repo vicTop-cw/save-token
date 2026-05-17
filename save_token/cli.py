@@ -12,20 +12,26 @@ from .orchestrator import run as run_pipeline
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="save-token")
+@click.version_option(version="0.2.0", prog_name="save-token")
 def main():
-    """save-token — query free AI web chats from the terminal.
+    """save-token — 免费 AI 命令行工具，零 API Key。
 
-    Uses browser automation (OpenCLI) to interact with AI chat
-    websites without needing API keys. Supports DeepSeek, 元宝,
-    Kimi, and more.
+    通过 opencli 浏览器自动化操控 DeepSeek、元宝、豆包、Kimi
+    等免费 AI 聊天页面。支持任务拆分、多轮对话、文件上传。
 
-    \b
-    Examples:
-      st ask "用Python写一个快排"
-      st ask "什么是Rust的所有权" -p deepseek
-      st ask "今天天气怎么样" -p yuanbao
-      st providers
+    \\b
+    快速开始：
+      st ask "用Python写快排"                 # 单次提问
+      st ask "问题" -p yuanbao -o result.md  # 指定厂商 + 输出文件
+      st ask "分析代码" -f ./main.py          # 上传文件分析
+
+      st run "1. A 2. B 3. C"               # 拆分 + 同一 Chat 逐轮对话
+      st run "..." --dry-run -v             # 只看拆分预览
+      st run "..." --deep-think --expert    # 深度思考 + 专家模式
+
+      st providers                             # 列出可用厂商
+      st log tail -f                           # 实时日志
+      st config set provider.default.name yuanbao  # 改默认厂商
     """
     pass
 
@@ -33,15 +39,15 @@ def main():
 @main.command()
 @click.argument("question")
 @click.option("-p", "--provider", default=None,
-              help="Provider name (deepseek, yuanbao, kimi)")
+              help="Provider: deepseek, yuanbao, doubao, kimi")
 @click.option("-r", "--retries", default=2, type=int,
               help="Max retries on failure")
 @click.option("-t", "--thinking", is_flag=True,
               help="Show thinking process")
-@click.option("--deep-think", is_flag=True, help="Enable deep thinking")
+@click.option("--deep-think", is_flag=True, help="Enable deep thinking (DeepSeek)")
 @click.option("--web-search/--no-web-search", default=True,
               help="Enable/disable web search (default: on)")
-@click.option("--expert", is_flag=True, help="Enable expert mode")
+@click.option("--expert", is_flag=True, help="Enable expert mode (DeepSeek)")
 @click.option("-f", "--file", "files", multiple=True,
               help="Upload file(s) to AI chat")
 @click.option("-j", "--json-output", is_flag=True,
@@ -53,7 +59,7 @@ def ask_cmd(question: str, provider: str, retries: int,
             web_search: bool, expert: bool, files, output):
     """Ask a question to a free AI chat provider.
 
-    Uses browser cookies — no API key needed for most providers.
+    Uses browser automation — no API key needed.
     """
     try:
         opts = AskOptions(deep_think=deep_think, web_search=web_search,
@@ -130,7 +136,6 @@ def config_set(key: str, value: str):
         if k not in target:
             target[k] = {}
         target = target[k]
-    # Try type coercion
     if value.lower() in ("true", "false"):
         value = value.lower() == "true"
     elif value.isdigit():
@@ -152,11 +157,11 @@ def config_path():
 @main.command()
 @click.argument("question")
 @click.option("-p", "--provider", default=None,
-              help="Provider name (deepseek, yuanbao, kimi)")
+              help="Provider: deepseek, yuanbao, doubao, kimi")
 @click.option("-w", "--workers", default=4, type=int,
-              help="Max parallel workers (default: 4)")
+              help="Max parallel workers (not used in multi-turn mode)")
 @click.option("--llm-split", is_flag=True,
-              help="Use LLM for task splitting (costs tokens, more accurate)")
+              help="Use LLM for task splitting (costs tokens)")
 @click.option("--llm-merge", is_flag=True,
               help="Use LLM for result merging (costs tokens)")
 @click.option("--deep-think", is_flag=True, help="Enable deep thinking")
@@ -178,16 +183,16 @@ def run_cmd(question: str, provider: str, workers: int,
             deep_think: bool, web_search: bool, expert: bool,
             files, json_output: bool, output: str,
             verbose: bool, dry_run: bool):
-    """Execute full Save-Token pipeline: split → parallel → merge.
+    """Execute full pipeline: split -> multi-turn chat -> merge.
 
-    Complex questions are automatically split into sub-tasks
-    and executed in parallel across multiple AI providers.
+    Complex questions are auto-split into sub-tasks and executed
+    as sequential turns in the same chat session for context.
 
     \\b
     Examples:
-      st run "分析Python、Rust、Go的性能差异，并给出选型建议"
-      st run "用Python写快排" --dry-run         # 只拆分不执行
-      st run "多任务分析" --llm-split -w 8      # LLM拆分 + 8并发
+      st run "1. 闭包是什么 2. 写闭包例子 3. 改成生成器"
+      st run "1. A 2. B" --dry-run -v
+      st run "分析代码" -f ./main.py
     """
     configure_logging("DEBUG" if verbose else "INFO")
 
@@ -226,7 +231,6 @@ def run_cmd(question: str, provider: str, workers: int,
         click.echo(_json.dumps(result_json, ensure_ascii=False, indent=2))
         return
 
-    # Pretty output
     if verbose:
         click.echo(f"\n🌳 Task Tree ({result.task_count} leaves, {result.split_method}):")
         click.echo(result.root_task.to_tree_str())

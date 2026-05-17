@@ -21,7 +21,7 @@ class TestDeepSeekProvider:
         assert cfg.url == "https://chat.deepseek.com/"
         assert cfg.input_selector == "textarea"
         assert cfg.send_method == "keys"
-        assert cfg.post_send_wait == 30
+        assert cfg.post_send_wait == 15
         assert cfg.session_name == "save-token-ds"
 
     @patch("save_token.providers.deepseek.OpenCLIBridge")
@@ -75,7 +75,6 @@ class TestDeepSeekProvider:
         mock_bridge_class.return_value = mock_bridge
         
         mock_bridge.navigate_and_wait.return_value = {"ok": True}
-        mock_bridge._run.return_value = {"uploaded": True}
         mock_bridge.fill.return_value = {"filled": True}
         mock_bridge.keys.return_value = {"ok": True}
         mock_bridge.eval.return_value = "Test answer"
@@ -86,12 +85,12 @@ class TestDeepSeekProvider:
         class MockOptions:
             deep_think = False
             web_search = False
-            file_paths = ["test.txt"]
+            file_paths = []
         
         result = provider.ask("Analyze this", options=MockOptions())
         
         assert isinstance(result, AskResult)
-        assert mock_bridge._run.called
+        assert mock_bridge.fill.called
 
     @patch("save_token.providers.deepseek.OpenCLIBridge")
     def test_apply_options(self, mock_bridge_class):

@@ -8,7 +8,15 @@ import subprocess, json, time, logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-OPENCLI_BIN = "/usr/local/bin/opencli"
+
+def _get_opencli_binary() -> str:
+    try:
+        from .config.manager import get_opencli_config
+        return get_opencli_config().get("binary", "/usr/local/bin/opencli")
+    except ImportError:
+        return "/usr/local/bin/opencli"
+
+OPENCLI_BIN = _get_opencli_binary()
 
 class OpenCLIBridge:
     def __init__(self, binary: str = OPENCLI_BIN):

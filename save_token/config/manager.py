@@ -23,7 +23,10 @@ DEFAULT_CONFIG = {
         "kimi": {"url": "https://kimi.moonshot.cn/"},
         "doubao": {"url": "https://www.doubao.com/chat/"},
     },
-    "opencli": {},
+    "opencli": {
+        "binary": "/usr/local/bin/opencli",
+        "username_identifiers": ["Victor"],
+    },
     "behavior": {
         "response_timeout": 120,
         "max_retries": 2,
@@ -69,6 +72,11 @@ def get_provider_config(name: str = None) -> dict:
     if not provider:
         raise ValueError(f"Unknown provider: {name}. Available: {list_providers()}")
     return {"name": name, **provider}
+
+
+def get_opencli_config() -> dict:
+    config = load_config()
+    return config.get("opencli", {})
 
 
 def list_providers() -> list:

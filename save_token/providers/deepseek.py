@@ -7,6 +7,13 @@ from .base import BaseProvider, ProviderConfig, AskResult
 
 logger = logging.getLogger(__name__)
 
+def _get_username_identifiers() -> list:
+    try:
+        from ..config.manager import get_opencli_config
+        return get_opencli_config().get("username_identifiers", ["Victor"])
+    except ImportError:
+        return ["Victor"]
+
 PROVIDER_CONFIG = ProviderConfig(
     name="deepseek", url="https://chat.deepseek.com/",
     description="DeepSeek Chat — deep_think, web_search, expert mode",
@@ -46,9 +53,17 @@ class Provider(BaseProvider):
     def __init__(self, config=None):
         super().__init__(config or PROVIDER_CONFIG)
         self.bridge = OpenCLIBridge()
+        self.username_identifiers = _get_username_identifiers()
 
     def _unique_session(self):
         return f"{self.config.session_name}-{uuid.uuid4().hex[:8]}"
+
+    def _contains_username(self, text: str) -> bool:
+        """Check if text contains any username identifier."""
+        for username in self.username_identifiers:
+            if username in text:
+                return True
+        return False
 
     def ask(self, question, options=None, session=None):
         s = session or self._unique_session()
@@ -59,7 +74,6 @@ class Provider(BaseProvider):
             if options:
                 self._apply_options(s, options)
 
-        # Embed files as text
         if options and options.file_paths:
             for fp in options.file_paths:
                 try:
@@ -85,7 +99,7 @@ class Provider(BaseProvider):
         raw = ""
         for _ in range(10):
             raw = self.bridge.eval(s, c.response_js)
-            if raw and len(raw) > 80 and "Victor" not in raw[:100] and "开启新对话" not in raw[:100]:
+            if raw and len(raw) > 80 and not self._contains_username(raw[:100]) and "开启新对话" not in raw[:100]:
                 break
             self.bridge.wait(3.0)
 
@@ -105,7 +119,7 @@ class Provider(BaseProvider):
                 f"(()=>{{const b=document.querySelector('div.ds-toggle-button--selected');"
                 f"if(!b||!b.textContent.includes('联网搜索'))return'ws:miss';{TRIGGER};return'ws:off'}})()")
             self.bridge.wait(0.5)
-        if options.mode == 'expert':
+        if getattr(options, 'mode', None) == 'expert':
             self.bridge.eval(session,
                 f"(()=>{{const btns=document.querySelectorAll('div.ds-toggle-button');"
                 f"for(const b of btns){{if(b.textContent.includes('快速模式')){{{TRIGGER};return'exp:on'}}}}"
