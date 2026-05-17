@@ -63,8 +63,14 @@ class BaseProvider:
     def __init__(self, config: ProviderConfig):
         self.config = config
 
-    def ask(self, question: str) -> AskResult:
-        """Send a question and return the answer. Override in subclasses."""
+    def ask(self, question: str, options=None, session: Optional[str] = None) -> AskResult:
+        """Send a question and return the answer. Override in subclasses.
+        
+        Args:
+            question: The question text.
+            options: AskOptions instance.
+            session: Optional browser session name to reuse.
+        """
         raise NotImplementedError
 
     def _validate(self) -> bool:
