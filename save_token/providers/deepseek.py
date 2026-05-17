@@ -110,8 +110,8 @@ class Provider(BaseProvider):
         raw = ""
         for _ in range(10):
             raw = self.bridge.eval(s, c.response_js)
-            # Check that we have meaningful content (not just page chrome)
-            if raw and len(raw) > 40 and "Victor" not in raw[:100]:
+            # Skip page chrome: Victor, empty, or just the question echoed back
+            if raw and len(raw) > 80 and "Victor" not in raw[:100] and "开启新对话" not in raw[:100] and raw.strip() != question.strip():
                 break
             self.bridge.wait(3.0)
 

@@ -129,7 +129,8 @@ def run(
         raw = ""
         for _ in range(15):
             raw = prov.bridge.eval(s, prov.config.response_js)
-            if raw and len(raw) > max(40, len(q)) and "Victor" not in raw[:100]:
+            # Skip page chrome and empty responses
+            if raw and len(raw) > 80 and "Victor" not in raw[:100] and "开启新对话" not in raw[:100]:
                 break
             prov.bridge.wait(3.0)
 
