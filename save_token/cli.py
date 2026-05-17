@@ -46,9 +46,11 @@ def main():
               help="Upload file(s) to AI chat")
 @click.option("-j", "--json-output", is_flag=True,
               help="Output as JSON")
+@click.option("-o", "--output", default=None,
+              help="Write answer to file")
 def ask_cmd(question: str, provider: str, retries: int,
             thinking: bool, json_output: bool, deep_think: bool,
-            web_search: bool, expert: bool, files):
+            web_search: bool, expert: bool, files, output):
     """Ask a question to a free AI chat provider.
 
     Uses browser cookies — no API key needed for most providers.
@@ -79,6 +81,12 @@ def ask_cmd(question: str, provider: str, retries: int,
 
     click.echo(f"\n{result.answer}")
     click.echo()
+
+    if output:
+        from pathlib import Path
+        p = Path(output)
+        p.write_text(result.answer, encoding="utf-8")
+        click.echo(f"📄 Written to {p.resolve()}")
 
 
 @main.command(name="providers")
@@ -159,6 +167,8 @@ def config_path():
               help="Upload file(s) to AI chat (only first turn)")
 @click.option("-j", "--json-output", is_flag=True,
               help="Output as JSON")
+@click.option("-o", "--output", default=None,
+              help="Write merged answer to file")
 @click.option("-v", "--verbose", is_flag=True,
               help="Show detailed progress (task tree, timing)")
 @click.option("--dry-run", is_flag=True,
@@ -166,7 +176,8 @@ def config_path():
 def run_cmd(question: str, provider: str, workers: int,
             llm_split: bool, llm_merge: bool,
             deep_think: bool, web_search: bool, expert: bool,
-            files, json_output: bool, verbose: bool, dry_run: bool):
+            files, json_output: bool, output: str,
+            verbose: bool, dry_run: bool):
     """Execute full Save-Token pipeline: split → parallel → merge.
 
     Complex questions are automatically split into sub-tasks
@@ -204,7 +215,7 @@ def run_cmd(question: str, provider: str, workers: int,
 
     if json_output:
         import json as _json
-        output = {
+        result_json = {
             "question": result.question,
             "split_method": result.split_method,
             "task_count": result.task_count,
@@ -212,7 +223,7 @@ def run_cmd(question: str, provider: str, workers: int,
             "success": result.success,
             "answer": result.merged_answer,
         }
-        click.echo(_json.dumps(output, ensure_ascii=False, indent=2))
+        click.echo(_json.dumps(result_json, ensure_ascii=False, indent=2))
         return
 
     # Pretty output
@@ -232,6 +243,12 @@ def run_cmd(question: str, provider: str, workers: int,
             click.echo(f"  ✗ [{f.task.id[:8]}] {f.task.description[:60]} — {f.error}")
 
     click.echo(f"\n{result.merged_answer}\n")
+
+    if output:
+        from pathlib import Path as _Path
+        p = _Path(output)
+        p.write_text(result.merged_answer, encoding="utf-8")
+        click.echo(f"📄 Written to {p.resolve()}")
 
 
 # ── Log Management ─────────────────────────────────────────────────────────

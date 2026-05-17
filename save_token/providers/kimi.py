@@ -13,8 +13,14 @@ PROVIDER_CONFIG = ProviderConfig(
     input_selector="div.chat-input-editor", send_selector="div.send-button-container", send_method="click",
     response_js=r"""
 (function() {
-  // Try to find the last assistant message
-  const bubbles = document.querySelectorAll('[class*="message"], [class*="reply"], [class*="answer"], [class*="bubble"]');
+  // Kimi uses specific class: chat-content-item-assistant
+  const msg = document.querySelector('[class*="chat-content-item-assistant"]');
+  if (msg) {
+    const text = (msg.innerText || msg.textContent || '').trim();
+    if (text && text.length > 5) return text;
+  }
+  // Fallback: generic message search
+  const bubbles = document.querySelectorAll('[class*="message"], [class*="reply"], [class*="answer"]');
   let last = '';
   for (const el of bubbles) {
     const text = (el.innerText || el.textContent || '').trim();

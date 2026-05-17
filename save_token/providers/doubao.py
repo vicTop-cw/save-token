@@ -13,16 +13,24 @@ PROVIDER_CONFIG = ProviderConfig(
     input_selector="textarea[placeholder*='发消息']", send_selector="button[class*='send']", send_method="click",
     response_js=r"""
 (function() {
-  // Try to find the last assistant message bubble
-  const bubbles = document.querySelectorAll('[class*="message"], [class*="reply"], [class*="answer"], [class*="bubble"], [class*="chat-item"]');
-  let last = '';
+  // Doubao uses max-w containers for messages
+  const msgs = document.querySelectorAll('[class*="max-w-[var(--content-max-width)]"]');
+  // Last message is usually the AI response
+  if (msgs.length >= 2) {
+    const last = msgs[msgs.length - 1];
+    const text = (last.innerText || last.textContent || '').trim();
+    if (text && text.length > 5 && !text.includes('快速') && !text.includes('PPT')) return text;
+  }
+  // Fallback: search for reply bubbles
+  const bubbles = document.querySelectorAll('[class*="message"], [class*="reply"], [class*="answer"]');
+  let best = '';
   for (const el of bubbles) {
     const text = (el.innerText || el.textContent || '').trim();
-    if (text.length > 30 && !text.includes('发消息') && !text.includes('发送')) {
-      last = text;
+    if (text.length > 30 && !text.includes('发消息') && !text.includes('快速')) {
+      best = text;
     }
   }
-  if (last) return last;
+  if (best) return best;
   const body = document.body.innerText || document.body.textContent || '';
   return body.substring(Math.max(0, body.length - 3000));
 })()""",
