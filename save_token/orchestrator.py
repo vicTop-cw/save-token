@@ -9,6 +9,7 @@ This is the top-level pipeline that implements the full Save-Token workflow:
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -17,6 +18,7 @@ from .async_engine import TaskSpec, TaskResult, BatchResult, execute_parallel_sy
 from .merger import merge_results, merge_concatenate
 from .options import AskOptions
 from .providers.base import AskResult
+from .providers.registry import get_provider
 from .logging import get_logger, TaskContext
 
 logger = get_logger(__name__)
@@ -84,64 +86,37 @@ def run(
         )
         specs.append(spec)
 
-    # Execute: single task or multi-turn — both use the same chat session logic
-    import uuid
-    from .providers.registry import get_provider as _gp
-
+    # Execute: sequential multi-turn via prov.ask() with session reuse
     s = f"st-{provider}-{uuid.uuid4().hex[:6]}"
+    prov = get_provider(provider)
     logger.info("│ Chat session %s: %d turns", s, len(specs))
-
-    prov = _gp(provider)
-    prov.bridge.navigate_and_wait(s, prov.config.url, wait=8.0)
-    if options:
-        prov._apply_options(s, options)
 
     leaf_results = []
     for i, sp in enumerate(specs):
         q = sp.question
-        # Embed files in first turn only (context persists for subsequent turns)
-        if i == 0 and options and options.file_paths:
-            for fp in options.file_paths:
-                try:
-                    from pathlib import Path
-                    content = Path(fp).read_text(encoding="utf-8")
-                    lang = Path(fp).suffix.lstrip(".")
-                    q = q + f"\n```{lang}\n{content}\n```\n"
-                    logger.info("│ Embedded %s (%d chars)", Path(fp).name, len(content))
-                except Exception as e:
-                    logger.warning("Could not embed %s: %s", fp, e)
+        # Embed files in first turn only
+        turn_opts = AskOptions(
+            deep_think=options.deep_think if options else False,
+            web_search=options.web_search if options else True,
+            mode=options.mode if options else "",
+            file_paths=list(options.file_paths) if (i == 0 and options and options.file_paths) else None,
+        )
 
         logger.info("│ Turn %d/%d: %s", i+1, len(specs), sp.question[:60])
-        # Clear textarea first (multi-turn residue)
-        if i > 0:
-            prov.bridge.eval(s, "(function(){var t=document.querySelector('textarea');if(t)t.value='';return!!t;})()")
-            prov.bridge.wait(0.5)
-        fr = prov.bridge.fill(s, "textarea", q)
-        if not fr.get("filled"):
-            raise RuntimeError(f"DeepSeek fill failed: {fr}")
-        prov.bridge.wait(0.5)
-        prov.bridge.keys(s, "Enter")
-        # Longer wait when files are embedded
-        w = prov.config.post_send_wait + (10 if (i == 0 and options and options.file_paths) else 0)
-        prov.bridge.wait(w)
-
-        # Poll for answer — ensure we get real AI response
-        raw = ""
-        for _ in range(15):
-            raw = prov.bridge.eval(s, prov.config.response_js)
-            # Skip page chrome and empty responses
-            if raw and len(raw) > 80 and "Victor" not in raw[:100] and "开启新对话" not in raw[:100]:
-                break
-            prov.bridge.wait(3.0)
-
-        answer = prov._extract_answer(raw, sp.question)
-        leaf_results.append(TaskResult(
-            task=sp,
-            result=AskResult(question=sp.question, answer=answer,
-                           provider=provider, url=prov.config.url),
-            success=True,
-        ))
-        logger.info("│ Turn %d/%d ✓ %s", i+1, len(specs), answer[:80])
+        try:
+            result = prov.ask(q, options=turn_opts, session=(s if i == 0 else None))
+            leaf_results.append(TaskResult(
+                task=sp,
+                result=AskResult(question=sp.question, answer=result.answer,
+                               provider=provider, url=prov.config.url),
+                success=True,
+            ))
+            logger.info("│ Turn %d/%d ✓ %s", i+1, len(specs), result.answer[:80])
+        except Exception as e:
+            logger.error("│ Turn %d/%d ✗ %s", i+1, len(specs), e)
+            leaf_results.append(TaskResult(
+                task=sp, error=str(e), success=False,
+            ))
 
     # Update task statuses
     for lr in leaf_results:

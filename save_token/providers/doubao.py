@@ -1,102 +1,58 @@
-"""豆包 provider — textarea with send button"""
+"""豆包 provider — uses opencli native doubao adapter."""
 
-import logging, re, time, uuid
+import logging, json, subprocess, time
 from pathlib import Path
-from ..opencli_bridge import OpenCLIBridge
 from .base import BaseProvider, ProviderConfig, AskResult
 
 logger = logging.getLogger(__name__)
 
 PROVIDER_CONFIG = ProviderConfig(
     name="doubao", url="https://www.doubao.com/chat/",
-    description="豆包 (ByteDance, free)",
-    input_selector="textarea[placeholder*='发消息']", send_selector="button[class*='send']", send_method="click",
-    response_js=r"""
-(function() {
-  // Doubao uses max-w containers for messages
-  const msgs = document.querySelectorAll('[class*="max-w-[var(--content-max-width)]"]');
-  // Last message is usually the AI response
-  if (msgs.length >= 2) {
-    const last = msgs[msgs.length - 1];
-    const text = (last.innerText || last.textContent || '').trim();
-    if (text && text.length > 5 && !text.includes('快速') && !text.includes('PPT')) return text;
-  }
-  // Fallback: search for reply bubbles
-  const bubbles = document.querySelectorAll('[class*="message"], [class*="reply"], [class*="answer"]');
-  let best = '';
-  for (const el of bubbles) {
-    const text = (el.innerText || el.textContent || '').trim();
-    if (text.length > 30 && !text.includes('发消息') && !text.includes('快速')) {
-      best = text;
-    }
-  }
-  if (best) return best;
-  const body = document.body.innerText || document.body.textContent || '';
-  return body.substring(Math.max(0, body.length - 3000));
-})()""",
-    thinking_js="""(function() {
-  const els = document.querySelectorAll('[class*="thinking"], [class*="reasoning"], [class*="think"]');
-  for (const el of els) { const t = el.textContent.trim(); if (t && t.length > 2) return t; }
-  return ''; })()""",
-    needs_fill_not_type=True, post_send_wait=15, pre_clear=False,
+    description="豆包 — via opencli native adapter",
+    input_selector="", send_selector="", send_method="",
+    response_js="", thinking_js="",
+    needs_fill_not_type=False, post_send_wait=60,
     session_name="save-token-db",
 )
 
 class Provider(BaseProvider):
     def __init__(self, config=None):
         super().__init__(config or PROVIDER_CONFIG)
-        self.bridge = OpenCLIBridge()
-
-    def _unique_session(self):
-        return f"{self.config.session_name}-{uuid.uuid4().hex[:8]}"
 
     def ask(self, question, options=None, session=None):
-        s = session or self._unique_session()
-        c = self.config
-        if not session:
-            logger.info("Opening %s (session %s)", c.url, s)
-            self.bridge.navigate_and_wait(s, c.url, wait=8.0)
-
-        # Embed files
+        cmd = ["opencli", "doubao", "ask", question, "-f", "json"]
         if options and options.file_paths:
             for fp in options.file_paths:
-                try:
-                    content = Path(fp).read_text(encoding="utf-8")
-                    lang = Path(fp).suffix.lstrip(".")
-                    question = question + f"\n```{lang}\n{content}\n```\n"
-                except Exception:
-                    pass
+                cmd.extend(["--file", fp])
 
-        # Fill textarea
-        fr = self.bridge.fill(s, "textarea[placeholder*='发消息']", question)
-        if not fr.get("filled"):
-            raise RuntimeError(f"Doubao fill failed: {fr}")
-        self.bridge.wait(0.5)
+        t0 = time.monotonic()
+        logger.info("opencli doubao ask: %s", question[:60])
 
-        # Click send
-        sr = self.bridge.click(s, "button[class*='send']")
-        if not sr.get("clicked"):
-            raise RuntimeError(f"Doubao send failed: {sr}")
-        self.bridge.wait(c.post_send_wait)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=self.config.post_send_wait)
+            if result.returncode != 0:
+                raise RuntimeError(f"opencli doubao ask: {result.stderr or result.stdout}")
 
-        thinking = ""
-        try: thinking = self.bridge.eval(s, c.thinking_js) if c.thinking_js else ""
-        except: pass
+            data = json.loads(result.stdout)
+            # Handle both array and dict formats
+            if isinstance(data, list):
+                answer = ""
+                for m in data:
+                    if isinstance(m, dict) and m.get("Role", "").lower() == "assistant":
+                        answer = m.get("Text", "") or m.get("Content", "")
+            else:
+                answer = data.get("response", "") or data.get("answer", "") or data.get("text", "")
+                msgs = data.get("messages", []) or data.get("conversation", [])
+                for m in reversed(msgs):
+                    if m.get("role") == "assistant":
+                        answer = m.get("text", "") or m.get("content", "")
+                        break
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Doubao timed out")
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Doubao non-JSON: {result.stdout[:200]}")
 
-        # Poll
-        raw = ""
-        for _ in range(10):
-            raw = self.bridge.eval(s, c.response_js)
-            if raw and len(raw) > 30:
-                break
-            self.bridge.wait(3.0)
-
-        ans = raw or ""
-        if question and question in ans:
-            ans = ans.split(question, 1)[-1].strip()
-        for n in ["豆包", "Doubao", "内容由 AI 生成", "AI 生成", "仅供参考", "发消息"]:
-            ans = ans.replace(n, "")
-        ans = re.sub(r'\n{3,}', '\n\n', ans).strip()
-        if not ans or len(ans) < 2:
-            ans = "(empty)"
-        return AskResult(question=question, answer=ans, thinking=thinking)
+        elapsed = int((time.monotonic() - t0) * 1000)
+        logger.info("ask(doubao) → %s in %dms", (answer or "(empty)")[:80], elapsed)
+        return AskResult(question=question, answer=answer or "(empty)")
