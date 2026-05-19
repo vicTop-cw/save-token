@@ -22,6 +22,7 @@ DEFAULT_CONFIG = {
         "yuanbao": {"url": "https://yuanbao.tencent.com/chat"},
         "kimi": {"url": "https://kimi.moonshot.cn/"},
         "doubao": {"url": "https://www.doubao.com/chat/"},
+        "local": {"url": "http://127.0.0.1:1234/v1"},
     },
     "opencli": {
         "binary": "/usr/local/bin/opencli",

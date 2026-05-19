@@ -54,18 +54,22 @@ def main():
               help="Output as JSON")
 @click.option("-o", "--output", default=None,
               help="Write answer to file")
+@click.option("--local", "use_local", is_flag=True,
+              help="Use local LLM (lm-server @ 127.0.0.1:1234)")
 def ask_cmd(question: str, provider: str, retries: int,
             thinking: bool, json_output: bool, deep_think: bool,
-            web_search: bool, expert: bool, files, output):
+            web_search: bool, expert: bool, files, output,
+            use_local: bool):
     """Ask a question to a free AI chat provider.
 
     Uses browser automation — no API key needed.
     """
     try:
+        p = "local" if use_local else provider
         opts = AskOptions(deep_think=deep_think, web_search=web_search,
                          mode="expert" if expert else "",
                          file_paths=list(files) if files else None)
-        result = ask(question, provider=provider, max_retries=retries, ask_options=opts)
+        result = ask(question, provider=p, max_retries=retries, ask_options=opts)
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
