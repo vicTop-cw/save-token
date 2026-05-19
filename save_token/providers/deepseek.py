@@ -45,7 +45,7 @@ PROVIDER_CONFIG = ProviderConfig(
   const els = document.querySelectorAll('[class*="thinking"], [class*="reasoning"]');
   for (const el of els) { const t = el.textContent.trim(); if (t && t.length > 2) return t; }
   return ''; })()""",
-    needs_fill_not_type=True, post_send_wait=15, pre_clear=False,
+    needs_fill_not_type=True, post_send_wait=20, pre_clear=False,
     session_name="save-token-ds",
 )
 
@@ -107,17 +107,23 @@ class Provider(BaseProvider):
             raise RuntimeError(f"DeepSeek fill failed: {fr}")
         self.bridge.wait(0.5)
         self.bridge.keys(s, "Enter")
-        wait_time = c.post_send_wait + (10 if options and options.file_paths else 0)
-        self.bridge.wait(wait_time)
+        # Longer wait for file/context-heavy or expert mode questions
+        extra_wait = 0
+        if options:
+            if options.file_paths: extra_wait += 10
+            if options.mode == 'expert': extra_wait += 10
+        self.bridge.wait(c.post_send_wait + extra_wait)
 
         thinking = ""
         try: thinking = self.bridge.eval(s, c.thinking_js) if c.thinking_js else ""
         except: pass
 
         raw = ""
-        for _ in range(10):
+        # Expert/long answers need more time
+        extra_polls = 5 if (options and options.mode == 'expert') else 0
+        for _ in range(10 + extra_polls):
             raw = self.bridge.eval(s, c.response_js)
-            if raw and len(raw) > 80 and not self._contains_username(raw[:100]) and "开启新对话" not in raw[:100]:
+            if raw and len(raw) > 80 and "Victor" not in raw[:100] and "开启新对话" not in raw[:100]:
                 break
             self.bridge.wait(3.0)
 
