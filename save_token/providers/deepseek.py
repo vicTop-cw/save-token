@@ -73,16 +73,34 @@ class Provider(BaseProvider):
             self.bridge.navigate_and_wait(s, c.url, wait=8.0)
             if options:
                 self._apply_options(s, options)
-
+        # Upload files via DataTransfer API (hidden input workaround)
         if options and options.file_paths:
             for fp in options.file_paths:
                 try:
                     content = Path(fp).read_text(encoding="utf-8")
-                    lang = Path(fp).suffix.lstrip(".")
-                    question = question + f"\n```{lang}\n{content}\n```\n"
-                    logger.info("Embedded %s (%d chars)", Path(fp).name, len(content))
-                except Exception:
-                    pass
+                    fname = Path(fp).name
+                    logger.info("Uploading %s via DataTransfer", fname)
+                    # Escape content for JS string
+                    escaped = content.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+                    upload_js = f"""(() => {{
+  const input = document.querySelector('input[type=file]');
+  if (!input) return 'NO_INPUT';
+  const file = new File([`{escaped}`], '{fname}', {{type: 'text/plain'}});
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  input.dispatchEvent(new Event('change', {{bubbles: true}}));
+  input.dispatchEvent(new Event('input', {{bubbles: true}}));
+  return 'OK:' + input.files[0].name;
+}})()"""
+                    r = self.bridge.eval(s, upload_js)
+                    logger.debug("upload eval: %s", r)
+                    if "NO_INPUT" in str(r):
+                        raise RuntimeError("File input not found on page")
+                    self.bridge.wait(1.0)
+                except Exception as e:
+                    logger.warning("DataTransfer upload failed: %s, falling back to text embed", e)
+                    question = question + f"\n```{Path(fp).suffix.lstrip('.')}\n{content}\n```\n"
 
         fr = self.bridge.fill(s, "textarea", question)
         if not fr.get("filled"):
