@@ -1,7 +1,7 @@
 """Local LLM provider — talks to lm-server OpenAI-compatible API."""
 
-import logging, json, time
-import urllib.request
+import logging, json, time, urllib.request
+from pathlib import Path
 from .base import BaseProvider, ProviderConfig, AskResult
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,17 @@ class Provider(BaseProvider):
 
     def ask(self, question, options=None, session=None):
         t0 = time.monotonic()
+        
+        # Embed files as markdown code blocks
+        if options and options.file_paths:
+            for fp in options.file_paths:
+                try:
+                    content = Path(fp).read_text(encoding="utf-8")
+                    lang = Path(fp).suffix.lstrip(".")
+                    question = question + f"\n```{lang}\n{content}\n```\n"
+                except Exception:
+                    pass
+
         url = f"{self.config.url}/chat/completions"
         body = json.dumps({
             "messages": [{"role": "user", "content": question}],
